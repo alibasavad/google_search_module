@@ -1,5 +1,5 @@
 venv
 *test
 *.env
-__pycache__/
+__pycache__
 *.data.txt
