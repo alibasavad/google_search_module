@@ -1,0 +1,5 @@
+python-dotenv
+httpx
+pandas
+requests
+BeautifulSoup4
