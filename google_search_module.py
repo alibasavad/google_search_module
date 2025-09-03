@@ -4,23 +4,12 @@ import re  # For regex cleanup
 from bs4 import BeautifulSoup, NavigableString, Tag
 import copy  # To create a modifiable copy of the element
 from urllib.parse import urlparse
+import os # For creating directories
 
 class GoogleSearchAgent:
     """
     A class to encapsulate Google search functionality.
     """
-    @staticmethod
-    def classify_url(url: str) -> str:
-        """Classify a URL as 'category' or 'product' based on path depth."""
-        parsed = urlparse(url)
-        # remove leading/trailing slashes and split
-        parts = [p for p in parsed.path.split("/") if p]
-        
-        if len(parts) <= 1:
-            return "category"
-        else:
-            return "product"
-
     @staticmethod
     def google_search(api_key, search_engine_id, query, title="", exclude="", inurl="", intext="", **params):
         """
@@ -81,7 +70,7 @@ class ProductInfoExtractor:
 
     def fetch_url(self):
         try:
-            response = requests.get(self.url)
+            response = requests.get(self.url, verify=False)
             response.raise_for_status()
             self.soup = BeautifulSoup(response.text, 'html.parser')
         except requests.exceptions.RequestException as e:
@@ -103,13 +92,26 @@ class ProductInfoExtractor:
                     text_parts.append(stripped_string)
             elif isinstance(child, Tag):
                 # If it's a div or h1, ensure newlines before and after
-                if child.name in ['div', 'h1']:
+                if child.name in ['h1','div', "dd" , "dl" , "ul"]:
                     if text_parts and text_parts[-1].strip():  # Only add newline if content exists before
                         text_parts.append('\n')
                     # Recursively get text for this div/h1
                     text_parts.append(self._get_formatted_text(child))  # Recursive call
                     # Ensure newline after the div/h1 itself
                     text_parts.append('\n')
+                    
+                elif child.name in ["br", "dt", "li"]:
+                    if text_parts and text_parts[-1]:  # Only add newline if content exists before
+                        text_parts.append(' , ')
+                    text_parts.append(self._get_formatted_text(child))  # Recursive call
+                    text_parts.append(' ')
+                    
+                elif child.name in [ 'h2', 'h3', 'h4']:
+                    if text_parts and text_parts[-1].strip():  # Only add newline if content exists before
+                        text_parts.append(': ')
+                    text_parts.append(self._get_formatted_text(child))  # Recursive call
+                    text_parts.append(': ')
+                    
                 else:  # For other tags, just get text, space separated
                     text_parts.append(self._get_formatted_text(child))  # Recursive call for other tags too
 
@@ -117,11 +119,25 @@ class ProductInfoExtractor:
         combined_text = ' '.join(filter(None, text_parts)).strip()
         return combined_text
 
+    def _select_divs(self, selector_list : list):
+        selected_divs = []
+        for selector in selector_list:
+            divs = self.soup.select(selector)
+            selected_divs.extend(divs)
+        return selected_divs
+
     def extract(self):
         if self.soup is None:
             self.fetch_url()
-            
-        product_info_divs = self.soup.select("#main_content > section:nth-child(4)")
+
+        product_info_divs = self._select_divs([
+            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > div.title-holder.type-1",
+            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > div.big-gallery-wrap",
+            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > ul > li:nth-child(2)",
+            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > ul > li.active",
+            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > ul > li:nth-child(3)",
+            "#c2868 > section.map-holder"
+        ])
 
         if product_info_divs:
             for product_div in product_info_divs:
@@ -150,13 +166,75 @@ class ProductInfoExtractor:
             content = "No extractable text found."
         else:
             content = ('\n\n' + '-'*50 + '\n\n').join(self.extracted_sections)
-            content += f"\n\nURL: {self.url}"
+            # content += f"\n\nURL: {self.url}"
 
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(content.strip())
         except IOError as e:
             raise RuntimeError(f"Error writing to '{filename}': {e}")
+
+
+class ImageDownloader:
+    def __init__(self, url, selector, base_url=None):
+        self.url = url
+        self.selector = selector
+        self.base_url = base_url if base_url else urlparse(url).scheme + "://" + urlparse(url).netloc
+        self.soup = None
+        self.image_urls = []
+
+    def _fetch_html(self):
+        try:
+            response = requests.get(self.url, verify=False)
+            response.raise_for_status()
+            self.soup = BeautifulSoup(response.text, 'html.parser')
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Error fetching the URL: {e}")
+
+    def extract_image_urls(self):
+        if self.soup is None:
+            self._fetch_html()
+
+        target_element = self.soup.select_one(self.selector)
+        if not target_element:
+            raise ValueError(f"No element found with selector: {self.selector}")
+
+        img_tags = target_element.find_all('img')
+        for img in img_tags:
+            src = img.get('src')
+            if src:
+                # Resolve relative URLs
+                if not urlparse(src).scheme:  # if scheme is not present, it's a relative URL
+                    if src.startswith('/'):
+                        # Absolute path relative to base URL
+                        self.image_urls.append(self.base_url + src)
+                    else:
+                        # Relative path, join with the current URL's path
+                        self.image_urls.append(self.base_url + "/" + src)
+                else:
+                    self.image_urls.append(src)
+        return self.image_urls
+
+    def download_images(self, folder_name="downloaded_images"):
+        if not self.image_urls:
+            print("No image URLs extracted. Please run extract_image_urls first.")
+            return
+
+        os.makedirs(folder_name, exist_ok=True)
+        print(f"Downloading {len(self.image_urls)} images to '{folder_name}'...")
+
+        for i, img_url in enumerate(self.image_urls):
+            try:
+                img_data = requests.get(img_url, verify=False).content
+                img_name = os.path.join(folder_name, f"image_{i+1}_{os.path.basename(urlparse(img_url).path)}")
+                with open(img_name, 'wb') as handler:
+                    handler.write(img_data)
+                print(f"Downloaded: {img_name}")
+            except requests.exceptions.RequestException as e:
+                print(f"Error downloading {img_url}: {e}")
+            except Exception as e:
+                print(f"An unexpected error occurred for {img_url}: {e}")
+        print("Image download complete.")
 
 
 class CategoryInfoExtractor:
@@ -167,7 +245,7 @@ class CategoryInfoExtractor:
 
     def fetch_url(self):
         try:
-            response = requests.get(self.url)
+            response = requests.get(self.url, verify=False)
             response.raise_for_status()
             self.soup = BeautifulSoup(response.text, 'html.parser')
         except requests.exceptions.RequestException as e:
@@ -232,51 +310,15 @@ class CategoryInfoExtractor:
         return self.extracted_sections
 
     def save_to_file(self, filename='extracted.txt'):
+        print(f"Saving extracted content to '{filename}'")
         if not self.extracted_sections:
             content = "No extractable text found."
         else:
             content = ('\n\n' + '-'*50 + '\n\n').join(self.extracted_sections)
-            content += f"\n\nURL: {self.url}"
+            # content += f"\n\nURL: {self.url}"
 
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(content.strip())
         except IOError as e:
             raise RuntimeError(f"Error writing to '{filename}': {e}")
-
-# Example of how to use this module (optional, for testing/demonstration)
-# if __name__ == "__main__":
-#     # Load API key and search engine ID from environment variables
-#     # These should be set in a .env file or as system environment variables
-#     api_key = os.getenv("SERPAPI_API_KEY")
-#     search_engine_id = os.getenv("SEARCH_ENGINE_ID")
-    
-#     if not api_key or not search_engine_id:
-#         print("Error: SERPAPI_API_KEY and SEARCH_ENGINE_ID must be set in your .env file or environment variables.")
-#         print('To get SERPAPI_API_KEY, use this link: "https://serpapi.com/"')
-#         print('To get SEARCH_ENGINE_ID, use this link: "https://programmablesearchengine.google.com/controlpanel/all"')
-#     else:
-#         # Example search
-#         query = "best programming languages"
-#         print(f"Searching for: '{query}'")
-#         results = GoogleSearchAgent.google_search(api_key, search_engine_id, query)
-
-#         if "items" in results:
-#             for i, item in enumerate(results["items"][:5]): # Print top 5 results
-#                 print(f"--- Result {i+1} ---")
-#                 print(f"Title: {item.get('title')}")
-#                 print(f"Link: {item.get('link')}")
-#                 print(f"Snippet: {item.get('snippet')}\n")
-#         elif "error" in results:
-#             print(f"Search error: {results['error']}")
-#             print(f"Details: {results['details']}")
-#         else:
-#             print("No items found in search results or unexpected response format.")
-#             print(results)
-
-# from product_info_extractor import ProductInfoExtractor
-
-# url = "https://example.com/product-page"
-# extractor = ProductInfoExtractor(url)
-# extractor.extract()
-# extractor.save_to_file("output.txt")

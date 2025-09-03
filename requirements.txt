@@ -3,3 +3,6 @@ httpx
 pandas
 requests
 BeautifulSoup4
+fastapi
+uvicorn
+httpx
