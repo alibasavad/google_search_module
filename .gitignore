@@ -1,5 +1,7 @@
 venv
-*test
 *.env
 __pycache__/
 *.data.txt
+*test*
+text_refiner.py
+rkg_cars_data
