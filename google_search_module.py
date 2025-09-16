@@ -92,15 +92,15 @@ class ProductInfoExtractor:
                     text_parts.append(stripped_string)
             elif isinstance(child, Tag):
                 # If it's a div or h1, ensure newlines before and after
-                if child.name in ['h1','div', "dd" , "dl" , "ul"]:
+                if child.name in ['h1','div', "dd" , "dl" , "ul", "br","li"]:
                     if text_parts and text_parts[-1].strip():  # Only add newline if content exists before
                         text_parts.append('\n')
                     # Recursively get text for this div/h1
                     text_parts.append(self._get_formatted_text(child))  # Recursive call
                     # Ensure newline after the div/h1 itself
-                    text_parts.append('\n')
+                    # text_parts.append('\n')
                     
-                elif child.name in ["br", "dt", "li"]:
+                elif child.name in ["br", "dt"]:
                     if text_parts and text_parts[-1]:  # Only add newline if content exists before
                         text_parts.append(' . ')
                     text_parts.append(self._get_formatted_text(child))  # Recursive call
@@ -131,8 +131,9 @@ class ProductInfoExtractor:
             self.fetch_url()
 
         product_info_divs = self._select_divs([
-            "#sectionProduct > div > div > div.col.col1",
-            "#blockContentInner > div.elementSection.elementSection_var0.elementSectionPadding_var10000.elementSectionMargin_var0.elementSectionInnerWidth_var0 > div > div.elementSection.elementSection_var0.elementSectionPadding_var10001.elementSectionMargin_var0.elementSectionInnerWidth_var0 > div > div > div.col.col1 > div > div.elementText.elementText_var0.elementTextListStyle_var0.last-child",
+            "#sectionProduct > div > div > div.col.col1 > div > div > div",
+            "#sectionProductData > div > div > div > div",
+            "#blockContentInner > div.elementSection.elementSection_var0.elementSectionPadding_var10000.elementSectionMargin_var0.elementSectionInnerWidth_var0 > div > div.elementSection.elementSection_var0.elementSectionPadding_var10001.elementSectionMargin_var0.elementSectionInnerWidth_var0 > div > div > div.col.col1 > div > div.elementText.elementText_var0.elementTextListStyle_var0.last-child > ul",
         ])
 
         if product_info_divs:

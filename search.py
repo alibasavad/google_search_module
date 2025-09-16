@@ -106,9 +106,30 @@ from google_search_module import ProductInfoExtractor, ImageDownloader
 
 items = [
     {
-     "url" : "https://dwd-concepts.de/de/produkte/inwi-stromschienen-systeme/bbs-inwi-stromschiene/",
-     "name" : "BBS INWI"
-     }
+     "url" : "https://dwd-concepts.de/de/produkte/led-signage/ace-panel-10/",
+     "name" : "ACE Panel 10"
+     }  ,
+    {
+     "url" : "https://dwd-concepts.de/de/produkte/led-signage/ace-panel-15/",
+     "name" : "ACE Panel 15"
+     } ,
+    {
+     "url" : "https://dwd-concepts.de/de/produkte/led-signage/ace-panel-basic/",
+     "name" : "ACE Panel Basic"
+     } ,
+    {
+     "url" : "https://dwd-concepts.de/de/produkte/led-signage/led-leuchtrahmen-textil/",
+     "name" : "LED-Leuchtrahmen Textil"
+     } ,
+    {
+     "url" : "https://dwd-concepts.de/de/produkte/led-signage/led-panel-ks-15/",
+     "name" : "LED-Panel KS 15"
+     } ,
+    {
+     "url" : "https://dwd-concepts.de/de/produkte/led-signage/paraflex-33/",
+     "name" : "PARAFLEX33"
+     } 
+     
 ]
 
 # this code is for extracting product information and their images
@@ -117,8 +138,8 @@ for item in items:
     extractor = ProductInfoExtractor(item['url'])
     extractor.extract()
     extractor.save_to_file(f"{item['name']}.txt")
-    downloader = ImageDownloader(item['url'], "#blockBodyInner")
-    image_urls = downloader.extract_image_urls()
-    if image_urls:
-        downloader.download_images(item['name'])
-        print(f"Images downloaded to '{item['name']}' folder.")
+    # downloader = ImageDownloader(item['url'], "#blockBodyInner")
+    # image_urls = downloader.extract_image_urls()
+    # if image_urls:
+    #     downloader.download_images(item['name'])
+    #     print(f"Images downloaded to '{item['name']}' folder.")
