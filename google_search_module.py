@@ -131,12 +131,8 @@ class ProductInfoExtractor:
             self.fetch_url()
 
         product_info_divs = self._select_divs([
-            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > div.title-holder.type-1",
-            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > div.big-gallery-wrap",
-            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > ul > li:nth-child(2)",
-            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > ul > li.active",
-            "#c2868 > section.info-section.gray-gradient.sz-search-detail > div:nth-child(2) > ul > li:nth-child(3)",
-            "#c2868 > section.map-holder"
+            "#sectionProduct > div > div > div.col.col1",
+            "#blockContentInner > div.elementSection.elementSection_var0.elementSectionPadding_var10000.elementSectionMargin_var0.elementSectionInnerWidth_var0 > div > div.elementSection.elementSection_var0.elementSectionPadding_var10001.elementSectionMargin_var0.elementSectionInnerWidth_var0 > div > div > div.col.col1 > div > div.elementText.elementText_var0.elementTextListStyle_var0.last-child",
         ])
 
         if product_info_divs:
@@ -199,20 +195,62 @@ class ImageDownloader:
         if not target_element:
             raise ValueError(f"No element found with selector: {self.selector}")
 
-        img_tags = target_element.find_all('img')
-        for img in img_tags:
-            src = img.get('src')
-            if src:
+        picture_tags = target_element.find_all('picture')
+        for picture in picture_tags:
+            best_image_url = None
+            best_width = 0
+            
+            # Prioritize webp if available, otherwise fall back to jpg/jpeg
+            source_elements = picture.find_all('source')
+            
+            # First pass: look for the highest resolution webp image
+            for source in source_elements:
+                if source.get('type') == 'image/webp' and source.get('srcset'):
+                    # srcset can contain multiple URLs and their descriptors (e.g., 1152w)
+                    for srcset_item in source['srcset'].split(','):
+                        parts = srcset_item.strip().split(' ')
+                        if len(parts) == 2:
+                            url = parts[0]
+                            width_str = parts[1]
+                            if width_str.endswith('w'):
+                                width = int(width_str[:-1])
+                                if width > best_width:
+                                    best_width = width
+                                    best_image_url = url
+            
+            # If no webp found or if jpeg has an even higher resolution, check jpeg
+            # This part ensures that if webp is found, we stick with it unless a JPEG is significantly better
+            # (which is unlikely given the usual srcset patterns, but good to be robust)
+            for source in source_elements:
+                if source.get('type') == 'image/jpeg' and source.get('srcset'):
+                    for srcset_item in source['srcset'].split(','):
+                        parts = srcset_item.strip().split(' ')
+                        if len(parts) == 2:
+                            url = parts[0]
+                            width_str = parts[1]
+                             # Check if it ends with 'w'
+                            if width_str.endswith('w'):
+                                width = int(width_str[:-1])
+                                if width > best_width :
+                                    best_width = width
+                                    best_image_url = url
+            
+            # Fallback to img tag if no source elements provided valid srcset, or for a base image
+            if not best_image_url:
+                img_tag = picture.find('img')
+                if img_tag and img_tag.get('src'):
+                    best_image_url = img_tag['src']
+            
+            
+            if best_image_url:
                 # Resolve relative URLs
-                if not urlparse(src).scheme:  # if scheme is not present, it's a relative URL
-                    if src.startswith('/'):
-                        # Absolute path relative to base URL
-                        self.image_urls.append(self.base_url + src)
+                if not urlparse(best_image_url).scheme:
+                    if best_image_url.startswith('/'):
+                        self.image_urls.append(self.base_url + best_image_url)
                     else:
-                        # Relative path, join with the current URL's path
-                        self.image_urls.append(self.base_url + "/" + src)
+                        self.image_urls.append(self.base_url + "/" + best_image_url)
                 else:
-                    self.image_urls.append(src)
+                    self.image_urls.append(best_image_url)
         return self.image_urls
 
     def download_images(self, folder_name="downloaded_images"):
