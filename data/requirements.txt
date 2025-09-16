@@ -6,3 +6,4 @@ BeautifulSoup4
 fastapi
 uvicorn
 httpx
+playwright
