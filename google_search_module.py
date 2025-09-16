@@ -158,7 +158,6 @@ class ProductInfoExtractor:
         return self.extracted_sections
 
     def save_to_file(self, filename='extracted.txt'):
-        print(f"Saving extracted content to '{filename}'")
         if not self.extracted_sections:
             content = "No extractable text found."
         else:
@@ -374,8 +373,8 @@ class ScreenshotCapturer:
     def launch_browser(self):
         self._playwright_instance = sync_playwright().start()
         self.browser = self._playwright_instance.chromium.launch(headless=self.headless)
-        # Set viewport size for the new page, width to 2500
-        self.page = self.browser.new_page(viewport={'width': 2500, 'height': 2500}) # Height can be arbitrary, but common
+        # self.page = self.browser.new_page()
+        self.page = self.browser.new_page(viewport={'width': 1800, 'height': 2500})
 
     def close_browser(self):
         if self.browser:
@@ -383,20 +382,30 @@ class ScreenshotCapturer:
         if self._playwright_instance:
             self._playwright_instance.stop()
 
-    def capture_element_screenshots(self, url, selectors, output_dir="element_screenshots"):
+    def capture_element_screenshots(self, url, selectors, output_dir="element_screenshots" , name_selectors = ""):
         if not self.browser or not self.page:
             self.launch_browser()
 
         os.makedirs(output_dir, exist_ok=True)
-        # Ensure full page load before proceeding
-        self.page.goto(url, wait_until="commit") # wait for 'commit' which means navigation has finished and Playwright has committed to the new URL
-        self.page.wait_for_load_state('domcontentloaded') # Wait for DOM to be constructed
-        self.page.wait_for_load_state('networkidle') # Wait for network to be idle
-        self.page.wait_for_timeout(5000) # Give extra 5 seconds for images to load, just in case
+        self.page.goto(url)
+        
+        # get text in name_selector element if provided
+        name = None
+        if name_selectors:
+            try:
+                self.page.wait_for_selector(name_selectors, state='visible', timeout=5000)
+                name_element = self.page.locator(name_selectors)
+                name = name_element.inner_text().strip().replace(" ", "_")[:50]  # Limit length for filename
+                # Sanitize name to remove invalid filename characters
+                name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
+                print(f"Using '{name}' as base name for screenshots.")
+            except Exception as e:
+                print(f"Could not retrieve name from selector '{name_selectors}': {e}")
+                name = None
 
         # Handle cookie pop-up if present
         cookie_notice_selector = "#cookieNoticeInner > div"
-        cookie_closer_selector = "#cookieNoticeCloser" # Corrected selector based on user feedback
+        cookie_closer_selector = "#cookieNoticeCloser"
 
         try:
             # Check if the cookie notice is visible
@@ -423,7 +432,13 @@ class ScreenshotCapturer:
                 # Sanitize selector for filename
                 # Replace invalid characters with underscores to create a valid filename
                 sanitized_selector = "".join(c if c.isalnum() else "_" for c in selector)
-                screenshot_path = os.path.join(output_dir, f"element_{i+1}_{sanitized_selector}.png")
+                
+                if name:
+                    # Append .png extension when a custom name is used
+                    screenshot_path = os.path.join(output_dir, f"{name}.png")
+                else:
+                    # Use the default naming convention with .png extension
+                    screenshot_path = os.path.join(output_dir, f"element_{i+1}_{sanitized_selector[:50]}.png")
                 
                 element.screenshot(path=screenshot_path)
                 screenshots_paths.append(screenshot_path)
