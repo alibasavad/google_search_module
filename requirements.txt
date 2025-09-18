@@ -2,8 +2,7 @@ python-dotenv
 httpx
 pandas
 requests
-BeautifulSoup4
+beautifulsoup4
 fastapi
 uvicorn
-httpx
 playwright

@@ -219,61 +219,71 @@ class ImageDownloader:
         for selector in self.picture_tags:
             picture_elements.extend(target_element.find_all(selector))
 
-        for picture in picture_elements:
-            best_image_url = None
-            best_width = 0
-            
-            # Prioritize webp if available, otherwise fall back to jpg/jpeg
-            source_elements = picture.find_all('source')
-            
-            # First pass: look for the highest resolution webp image
-            for source in source_elements:
-                if source.get('type') == 'image/webp' and source.get('srcset'):
-                    # srcset can contain multiple URLs and their descriptors (e.g., 1152w)
-                    for srcset_item in source['srcset'].split(','):
-                        parts = srcset_item.strip().split(' ')
-                        if len(parts) == 2:
-                            url = parts[0]
-                            width_str = parts[1]
-                            if width_str.endswith('w'):
-                                width = int(width_str[:-1])
-                                if width > best_width:
-                                    best_width = width
-                                    best_image_url = url
-            
-            # If no webp found or if jpeg has an even higher resolution, check jpeg
-            # This part ensures that if webp is found, we stick with it unless a JPEG is significantly better
-            # (which is unlikely given the usual srcset patterns, but good to be robust)
-            for source in source_elements:
-                if source.get('type') == 'image/jpeg' and source.get('srcset'):
-                    for srcset_item in source['srcset'].split(','):
-                        parts = srcset_item.strip().split(' ')
-                        if len(parts) == 2:
-                            url = parts[0]
-                            width_str = parts[1]
-                             # Check if it ends with 'w'
-                            if width_str.endswith('w'):
-                                width = int(width_str[:-1])
-                                if width > best_width :
-                                    best_width = width
-                                    best_image_url = url
-            
-            # Fallback to img tag if no source elements provided valid srcset, or for a base image
-            if not best_image_url:
-                img_tag = picture.find('img')
-                if img_tag and img_tag.get('src'):
-                    best_image_url = img_tag['src']
-            
-            
-            if best_image_url:
-                # Resolve relative URLs
-                if not urlparse(best_image_url).scheme:
-                    if best_image_url.startswith('/'):
-                        self.image_urls.append(self.base_url + best_image_url)
+        for element in picture_elements:
+            if element.name == 'img':
+                src = element.get('src')
+                if src:
+                    # Resolve relative URLs
+                    if not urlparse(src).scheme:  # if scheme is not present, it's a relative URL
+                        if src.startswith('/'):
+                            # Absolute path relative to base URL
+                            self.image_urls.append(self.base_url + src)
+                        else:
+                            # Relative path, join with the current URL's path
+                            self.image_urls.append(self.base_url + "/" + src)
                     else:
-                        self.image_urls.append(self.base_url + "/" + best_image_url)
-                else:
-                    self.image_urls.append(best_image_url)
+                        self.image_urls.append(src)
+            elif element.name == 'picture':
+                best_image_url = None
+                best_width = 0
+                
+                # Prioritize webp if available, otherwise fall back to jpg/jpeg
+                source_elements = element.find_all('source')
+                # First pass: look for the highest resolution webp image
+                for source in source_elements:
+                    if source.get('type') == 'image/webp' and source.get('srcset'):
+                        # srcset can contain multiple URLs and their descriptors (e.g., 1152w)
+                        for srcset_item in source['srcset'].split(','):
+                            parts = srcset_item.strip().split(' ')
+                            if len(parts) == 2:
+                                url = parts[0]
+                                width_str = parts[1]
+                                if width_str.endswith('w'):
+                                    width = int(width_str[:-1])
+                                    if width > best_width:
+                                        best_width = width
+                                        best_image_url = url
+                # If no webp found or if jpeg has an even higher resolution, check jpeg
+                # This part ensures that if webp is found, we stick with it unless a JPEG is significantly better
+                # (which is unlikely given the usual srcset patterns, but good to be robust)
+                for source in source_elements:
+                    if source.get('type') == 'image/jpeg' and source.get('srcset'):
+                        for srcset_item in source['srcset'].split(','):
+                            parts = srcset_item.strip().split(' ')
+                            if len(parts) == 2:
+                                url = parts[0]
+                                width_str = parts[1]
+                                # Check if it ends with 'w'
+                                if width_str.endswith('w'):
+                                    width = int(width_str[:-1])
+                                    if width > best_width :
+                                        best_width = width
+                                        best_image_url = url
+                # Fallback to img tag if no source elements provided valid srcset, or for a base image
+                if not best_image_url:
+                    img_tag = element.find('img')
+                    if img_tag and img_tag.get('src'):
+                        best_image_url = img_tag['src']
+                if best_image_url:
+                    # Resolve relative URLs
+                    if not urlparse(best_image_url).scheme:
+                        if best_image_url.startswith('/'):
+                            self.image_urls.append(self.base_url + best_image_url)
+                        else:
+                            self.image_urls.append(self.base_url + "/" + best_image_url)
+                    else:
+                        self.image_urls.append(best_image_url)
+
         print(f"Extracted {len(self.image_urls)} image URLs.")
         return self.image_urls
 
@@ -301,8 +311,17 @@ class ImageDownloader:
 
 
 class ScreenshotCapturer:
-    def __init__(self, headless=True):
+    def __init__(self, url, headless=True, selectors=[], name="", name_selector="", output_dir="data/screen_shots", width=1800, height=2500, popup_selctor="", popup_closer_selector=""):
+        self.url = url
         self.headless = headless
+        self.selectors = selectors
+        self.name = name
+        self.name_selector = name_selector
+        self.width = width
+        self.height = height
+        self.output_dir = output_dir
+        self.popup_selctor = popup_selctor
+        self.popup_closer_selector = popup_closer_selector
         self.browser = None
         self.page = None
 
@@ -310,7 +329,7 @@ class ScreenshotCapturer:
         self._playwright_instance = sync_playwright().start()
         self.browser = self._playwright_instance.chromium.launch(headless=self.headless)
         # self.page = self.browser.new_page()
-        self.page = self.browser.new_page(viewport={'width': 1800, 'height': 2500})
+        self.page = self.browser.new_page(viewport={'width': self.width, 'height': self.height})
 
     def close_browser(self):
         if self.browser:
@@ -318,36 +337,15 @@ class ScreenshotCapturer:
         if self._playwright_instance:
             self._playwright_instance.stop()
 
-    def capture_element_screenshots(self, url, selectors, output_dir="element_screenshots" , name_selectors = ""):
-        if not self.browser or not self.page:
-            self.launch_browser()
-
-        os.makedirs(output_dir, exist_ok=True)
-        self.page.goto(url)
-        
-        # get text in name_selector element if provided
-        name = None
-        if name_selectors:
-            try:
-                self.page.wait_for_selector(name_selectors, state='visible', timeout=5000)
-                name_element = self.page.locator(name_selectors)
-                name = name_element.inner_text().strip().replace(" ", "_")[:50]  # Limit length for filename
-                # Sanitize name to remove invalid filename characters
-                name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
-                print(f"Using '{name}' as base name for screenshots.")
-            except Exception as e:
-                print(f"Could not retrieve name from selector '{name_selectors}': {e}")
-                name = None
-
+    def close_popups(self):
         # Handle cookie pop-up if present
-        cookie_notice_selector = "#cookieNoticeInner > div"
-        cookie_closer_selector = "#cookieNoticeCloser"
-
+        if not self.popup_selctor or not self.popup_closer_selector:
+            return  # No pop-up selectors provided
         try:
             # Check if the cookie notice is visible
-            self.page.wait_for_selector(cookie_notice_selector, state='visible', timeout=5000)
+            self.page.wait_for_selector(self.popup_selctor, state='visible', timeout=5000)
             # If visible, click the closer button
-            self.page.click(cookie_closer_selector)
+            self.page.click(self.popup_closer_selector)
             print("Closed cookie notice pop-up.")
             # Give some time for the pop-up to disappear
             self.page.wait_for_timeout(1000)
@@ -355,8 +353,31 @@ class ScreenshotCapturer:
             print("No cookie notice pop-up found or could not close it.")
             # Continue without closing if not found or cannot be closed
 
+    def capture_element_screenshots(self):
+        if not self.browser or not self.page:
+            self.launch_browser()
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.page.goto(self.url)
+        
+        # get text in name_selector element if provided
+        name = self.name
+        if self.name_selector:
+            try:
+                self.page.wait_for_selector(self.name_selector, state='visible', timeout=5000)
+                name_element = self.page.locator(self.name_selector)
+                name = name_element.inner_text().strip().replace(" ", "_")[:50]  # Limit length for filename
+                # Sanitize name to remove invalid filename characters
+                name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
+                print(f"Using '{name}' as base name for screenshots.")
+            except Exception as e:
+                print(f"Could not retrieve name from selector '{self.name_selector}': {e}")
+                name = None
+
+        self.close_popups()
+
         screenshots_paths = []
-        for i, selector in enumerate(selectors):
+        for i, selector in enumerate(self.selectors):
             try:
                 # Wait for the element to be visible
                 self.page.wait_for_selector(selector, state='visible', timeout=11000)
@@ -371,10 +392,10 @@ class ScreenshotCapturer:
                 
                 if name:
                     # Append .png extension when a custom name is used
-                    screenshot_path = os.path.join(output_dir, f"{name}.png")
+                    screenshot_path = os.path.join(self.output_dir, f"{name}.png")
                 else:
                     # Use the default naming convention with .png extension
-                    screenshot_path = os.path.join(output_dir, f"element_{i+1}_{sanitized_selector[:50]}.png")
+                    screenshot_path = os.path.join(self.output_dir, f"element_{i+1}_{sanitized_selector[:50]}.png")
                 
                 element.screenshot(path=screenshot_path)
                 screenshots_paths.append(screenshot_path)
